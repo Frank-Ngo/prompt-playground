@@ -5,31 +5,38 @@ import os
 
 st.set_page_config(page_title="Prompt Playground", page_icon="🧠")
 
-# Load environment variables
+# Load OpenAI API key from the .env file
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 
 # Configure OpenAI
 client = openai.OpenAI(api_key=api_key)
 
-# Initialize session history and favorites
+
+# Store user session data across interactions
 if "history" not in st.session_state:
     st.session_state.history = []
 if "favorites" not in st.session_state:
     st.session_state.favorites = []
 if "enable_comparison" not in st.session_state:
     st.session_state.enable_comparison = False
+    
 
 st.title("🧠 Prompt Playground")
 st.write("Test how different prompts affect GPT's response.")
+
 
 # Model selection
 default_model = "gpt-3.5-turbo"
 model_options = ["gpt-3.5-turbo", "gpt-4", "gpt-4o"]
 model = st.selectbox("Choose a model:", model_options, index=model_options.index(default_model))
 
+# Comparison & enhancement options
 st.session_state.enable_comparison = st.checkbox("🔀 Enable Side-by-Side Style Comparison")
+auto_prompting = st.checkbox("🤖 Auto-Enhance Prompt (rewrite to be clearer)")
 
+
+# Style selection
 style_options = [
     "Default",
     "Casual",
@@ -46,6 +53,7 @@ if st.session_state.enable_comparison:
 else:
     style = st.selectbox("Choose a style for GPT's response:", style_options)
 
+# Prompt templates
 prompt_templates = {
     "Custom": "",
     "Summarize this text": "Summarize the following text:\n\n",
@@ -54,8 +62,9 @@ prompt_templates = {
     "Generate quiz questions": "Generate quiz questions based on this content:\n\n"
 }
 
-template_choice = st.selectbox("Choose a template:", list(prompt_templates.keys()))
 
+# Prompt Input Fields
+template_choice = st.selectbox("Choose a template:", list(prompt_templates.keys()))
 prompt_title = st.text_input("Optional: Add a title for this prompt (for easier tracking in history or favorites)")
 
 user_input = st.text_area(
@@ -64,6 +73,25 @@ user_input = st.text_area(
     key=template_choice
 )
 
+# Auto-enhance prompt logic
+def auto_rewrite_prompt(raw_prompt):
+    try:
+        enhancement = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a prompt engineer. Rewrite unclear or casual instructions into precise and effective prompts."},
+                {"role": "user", "content": raw_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=100
+        )
+        return enhancement.choices[0].message.content
+    except Exception as e:
+        st.warning("❌ Auto-enhancement failed. Using original prompt.")
+        return raw_prompt
+
+
+#  Style to system message mapping
 def get_system_msg(style):
     return {
         "Default": "You are a helpful assistant.",
@@ -75,10 +103,18 @@ def get_system_msg(style):
         "Twitter Thread": "Write the response like a viral Twitter thread with short, punchy paragraphs and emojis if relevant."
     }.get(style, "You are a helpful assistant.")
 
+
+# 🚀 Generate response
 if st.button("Generate"):
     if user_input:
         with st.spinner("Thinking..."):
             try:
+                if auto_prompting:
+                    with st.spinner("🛠 Enhancing your prompt..."):
+                        user_input = auto_rewrite_prompt(user_input)
+                        st.markdown("✅ **Enhanced Prompt:**")
+                        st.code(user_input)
+
                 if st.session_state.enable_comparison:
                     responses = {}
                     for s in [style1, style2]:
@@ -146,7 +182,7 @@ if st.button("Generate"):
     else:
         st.warning("Please enter a prompt before clicking Generate.")
 
-# ⭐ Show Starred (Favorites) panel
+# Starred Favorites
 if st.session_state.favorites:
     st.markdown("---")
     st.markdown("### ⭐ Starred Responses")
@@ -162,7 +198,7 @@ if st.session_state.favorites:
                 st.session_state.favorites.remove(item)
                 st.rerun()
 
-# 📜 Show history panel with Clear History option
+# History
 if st.session_state.history:
     st.markdown("---")
     st.markdown("### 📜 Response History")
